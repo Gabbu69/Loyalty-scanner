@@ -82,7 +82,10 @@ export function AppShell({
   role?: "owner" | "staff";
   demo?: boolean;
 }) {
-  const mobileNav = [primaryNav[0], primaryNav[1], primaryNav[3], ownerNav[0]];
+  const mobileNav =
+    role === "owner"
+      ? [primaryNav[0], primaryNav[1], primaryNav[3], ownerNav[0]]
+      : [primaryNav[0], primaryNav[1], primaryNav[2], primaryNav[3]];
 
   return (
     <div className="min-h-dvh bg-muted/35">

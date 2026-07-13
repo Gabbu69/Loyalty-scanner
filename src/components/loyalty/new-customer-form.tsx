@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { IssuedCard } from "@/lib/data/types";
+import { getErrorMessage } from "@/lib/errors";
 import { normalizePhilippinePhone } from "@/lib/loyalty/phone";
 
 export function NewCustomerForm() {
@@ -39,6 +40,8 @@ export function NewCustomerForm() {
       const card = await createMember({ fullName: fullName.trim(), phone: normalizedPhone });
       setIssued(card);
       toast.success("Customer created");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "The customer could not be created."));
     } finally {
       setSaving(false);
     }

@@ -58,6 +58,7 @@ export type ActivityItem = {
 
 export type StaffMember = {
   id: string;
+  isCurrent?: boolean;
   displayName: string;
   email: string;
   role: StaffRole;

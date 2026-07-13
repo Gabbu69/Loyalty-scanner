@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { IssuedCard, ResolvedMember } from "@/lib/data/types";
+import { getErrorMessage } from "@/lib/errors";
 import { activityLabel, displayPhone, formatDateTime } from "@/lib/format";
 import { createIdempotencyKey } from "@/lib/loyalty/idempotency";
 
@@ -32,40 +33,69 @@ export function CustomerProfile({ memberId }: { memberId: string }) {
   const [member, setMember] = useState<ResolvedMember | null>(null);
   const [issued, setIssued] = useState<IssuedCard | null>(null);
   const [working, setWorking] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    void getMember(memberId).then(setMember);
+    let active = true;
+    void getMember(memberId)
+      .then((next) => {
+        if (!active) return;
+        setMember(next);
+        if (!next) setLoadError("This customer was not found or is no longer available.");
+      })
+      .catch((error) => {
+        if (active) setLoadError(getErrorMessage(error, "This customer could not be loaded."));
+      });
+    return () => {
+      active = false;
+    };
   }, [getMember, memberId, snapshot]);
 
   const activity = useMemo(() => (snapshot?.activity ?? []).filter((item) => item.memberId === memberId).slice(0, 8), [memberId, snapshot]);
-  if (!member) return <Card className="shadow-none"><CardContent className="p-8 text-center text-muted-foreground">Loading customer...</CardContent></Card>;
+  if (!member) return <Card className="shadow-none"><CardContent className="p-8 text-center text-muted-foreground">{loadError ?? "Loading customer..."}</CardContent></Card>;
 
   async function award() {
     if (!member) return;
     setWorking(true);
-    const outcome = await awardVisit(member.id, createIdempotencyKey());
-    setWorking(false);
-    if (outcome.status === "awarded") { setMember(outcome.member); toast.success(`${outcome.pointsAdded} point${outcome.pointsAdded === 1 ? "" : "s"} added`); }
-    else if (outcome.status === "cooldown") toast.warning("This customer is still inside the duplicate-scan cooldown.");
-    else toast.error(outcome.message);
+    try {
+      const outcome = await awardVisit(member.id, createIdempotencyKey());
+      if (outcome.status === "awarded") { setMember(outcome.member); toast.success(`${outcome.pointsAdded} point${outcome.pointsAdded === 1 ? "" : "s"} added`); }
+      else if (outcome.status === "cooldown") toast.warning("This customer is still inside the duplicate-scan cooldown.");
+      else toast.error(outcome.message);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Visit points could not be added."));
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function redeem() {
     if (!member) return;
     setWorking(true);
-    const outcome = await redeemReward(member.id, createIdempotencyKey());
-    setWorking(false);
-    if (outcome.status === "redeemed") { setMember(outcome.member); toast.success("Reward redeemed"); }
-    else if (outcome.status === "insufficient_points") toast.error(`Customer needs ${outcome.required - outcome.current} more points.`);
-    else toast.error(outcome.message);
+    try {
+      const outcome = await redeemReward(member.id, createIdempotencyKey());
+      if (outcome.status === "redeemed") { setMember(outcome.member); toast.success("Reward redeemed"); }
+      else if (outcome.status === "insufficient_points") toast.error(`Customer needs ${outcome.required - outcome.current} more points.`);
+      else toast.error(outcome.message);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "The reward could not be redeemed."));
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function reissue() {
     if (!member) return;
     setWorking(true);
-    const card = await reissueCard(member.id);
-    setWorking(false);
-    if (card) { setIssued(card); toast.success("Old card revoked; replacement ready"); }
+    try {
+      const card = await reissueCard(member.id);
+      if (card) { setIssued(card); toast.success("Old card revoked; replacement ready"); }
+      else toast.error("The replacement card could not be created.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "The replacement card could not be created."));
+    } finally {
+      setWorking(false);
+    }
   }
 
   const rewardCost = snapshot?.settings.rewardCost ?? 10;

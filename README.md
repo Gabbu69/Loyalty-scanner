@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Loyalty Scan
 
-## Getting Started
+A staff-first loyalty app for enrolling customers, issuing private QR loyalty IDs, awarding fixed visit points, redeeming rewards, and keeping an attributable audit trail.
 
-First, run the development server:
+## What works
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Demo mode with seeded customers and browser-local persistence
+- Supabase email/password staff authentication with owner and staff roles
+- First-owner store bootstrap at `/setup`
+- Customer enrollment with QR card share, download, and print actions
+- Camera scanning plus manual name, phone, or member-code lookup
+- Server-enforced visit points, duplicate cooldowns, rewards, card replacement, and idempotency
+- Customer directory, profiles, activity, owner dashboard, program settings, and staff management
+- Row Level Security, restricted RPC functions, append-only point ledger, and audit events
+- Mobile-friendly PWA shell
+
+## Run locally
+
+PowerShell on this machine should use the `.cmd` npm launchers:
+
+```powershell
+npm.cmd install
+npm.cmd run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). With no Supabase public configuration, the app automatically runs in demo mode.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Connect Supabase
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create a Supabase project.
+2. Apply every SQL file in `supabase/migrations` in filename order.
+3. Copy `.env.example` to `.env.local` and fill in the project values.
+4. In Supabase Authentication, create the first owner user with email/password.
+5. Sign in at `/login`; the app sends an unregistered user to `/setup`, where the store and first owner membership are created.
 
-## Learn More
+For staff invitations in an SSR deployment, configure the Supabase **Invite user** email template to link to:
 
-To learn more about Next.js, take a look at the following resources:
+```text
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/set-password
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Add the app origins you use (local and deployed) to Supabase Auth redirect URLs. `SUPABASE_SECRET_KEY` is server-only and is required for invitations and enriched staff account details; never expose it with a `NEXT_PUBLIC_` name.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Environment
 
-## Deploy on Vercel
+```dotenv
+NEXT_PUBLIC_DEMO_MODE=false
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
+SUPABASE_SECRET_KEY=sb_secret_your_server_key
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` values remain supported for existing projects.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Verify
+
+```powershell
+npm.cmd run lint
+npx.cmd tsc --noEmit
+npm.cmd run test -- --run
+npm.cmd run build
+```
+
+Database contract tests are in `supabase/tests/loyalty.sql` and can be run against a local Supabase stack.

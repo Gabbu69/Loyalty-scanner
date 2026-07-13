@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProgramSettings as Settings } from "@/lib/data/types";
+import { getErrorMessage } from "@/lib/errors";
 
 export function ProgramSettings() {
   const { snapshot, updateSettings, resetDemo, mode } = useLoyalty();
@@ -70,9 +71,14 @@ function ProgramSettingsEditor({
       return;
     }
     setSaving(true);
-    await updateSettings(current);
-    setSaving(false);
-    toast.success("Loyalty program updated");
+    try {
+      await updateSettings(current);
+      toast.success("Loyalty program updated");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "The loyalty program could not be updated."));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (

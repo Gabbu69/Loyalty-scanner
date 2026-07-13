@@ -16,6 +16,8 @@ const errors: Record<string, string> = {
   invalid_credentials: "That email or password did not match.",
   inactive_staff: "This staff account has been deactivated.",
   service_unavailable: "Sign-in is temporarily unavailable. Try again shortly.",
+  missing_auth_code: "This sign-in link is incomplete or expired.",
+  auth_callback_failed: "This sign-in or invitation link is invalid or expired. Ask an owner to send a new invitation.",
 };
 
 export default async function LoginPage({

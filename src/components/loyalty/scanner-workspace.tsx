@@ -42,6 +42,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AwardOutcome, RedeemOutcome, ResolvedMember } from "@/lib/data/types";
+import { getErrorMessage } from "@/lib/errors";
 import { displayPhone, formatDateTime } from "@/lib/format";
 import { createIdempotencyKey } from "@/lib/loyalty/idempotency";
 
@@ -96,64 +97,88 @@ export function ScannerWorkspace() {
     setError(null);
     setCooldown(null);
     setSelectedToken(null);
-    const member = await getMember(memberId);
-    setSelected(member);
-    setWorking(false);
-    if (!member) setError("This customer could not be loaded.");
+    try {
+      const member = await getMember(memberId);
+      setSelected(member);
+      if (!member) setError("This customer could not be loaded.");
+    } catch (error) {
+      setSelected(null);
+      setError(getErrorMessage(error, "This customer could not be loaded."));
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function detected(token: string) {
     setWorking(true);
     setError(null);
     setCooldown(null);
-    const outcome = await resolveToken(token);
-    if (outcome.status === "valid") {
-      setSelected(outcome.member);
-      setSelectedToken(token);
-    } else {
+    try {
+      const outcome = await resolveToken(token);
+      if (outcome.status === "valid") {
+        setSelected(outcome.member);
+        setSelectedToken(token);
+      } else {
+        setSelected(null);
+        setSelectedToken(null);
+        setError(outcome.message);
+      }
+    } catch (error) {
       setSelected(null);
       setSelectedToken(null);
-      setError(outcome.message);
+      setError(getErrorMessage(error, "This loyalty ID could not be checked."));
+    } finally {
+      setWorking(false);
     }
-    setWorking(false);
   }
 
   async function award() {
     if (!selected) return;
     setWorking(true);
     setError(null);
-    const outcome = await awardVisit(selected.id, createIdempotencyKey(), selectedToken);
-    setWorking(false);
-    if (outcome.status === "awarded") {
-      setCompleted({ kind: "award", outcome });
-      setSelected(null);
-      setSelectedToken(null);
-      signalSuccess();
-      return;
+    try {
+      const outcome = await awardVisit(selected.id, createIdempotencyKey(), selectedToken);
+      if (outcome.status === "awarded") {
+        setCompleted({ kind: "award", outcome });
+        setSelected(null);
+        setSelectedToken(null);
+        signalSuccess();
+        return;
+      }
+      if (outcome.status === "cooldown") {
+        setCooldown(outcome.nextEligibleAt);
+        setSelected(outcome.member);
+        navigator.vibrate?.(180);
+        return;
+      }
+      setError(outcome.message);
+    } catch (error) {
+      setError(getErrorMessage(error, "Visit points could not be added."));
+    } finally {
+      setWorking(false);
     }
-    if (outcome.status === "cooldown") {
-      setCooldown(outcome.nextEligibleAt);
-      setSelected(outcome.member);
-      navigator.vibrate?.(180);
-      return;
-    }
-    setError(outcome.message);
   }
 
   async function redeem() {
     if (!selected) return;
     setWorking(true);
-    const outcome = await redeemReward(selected.id, createIdempotencyKey());
-    setWorking(false);
-    if (outcome.status === "redeemed") {
-      setCompleted({ kind: "redeem", outcome });
-      setSelected(null);
-      setSelectedToken(null);
-      signalSuccess();
-    } else if (outcome.status === "insufficient_points") {
-      toast.error(`Customer needs ${outcome.required - outcome.current} more points.`);
-    } else {
-      setError(outcome.message);
+    setError(null);
+    try {
+      const outcome = await redeemReward(selected.id, createIdempotencyKey());
+      if (outcome.status === "redeemed") {
+        setCompleted({ kind: "redeem", outcome });
+        setSelected(null);
+        setSelectedToken(null);
+        signalSuccess();
+      } else if (outcome.status === "insufficient_points") {
+        toast.error(`Customer needs ${outcome.required - outcome.current} more points.`);
+      } else {
+        setError(outcome.message);
+      }
+    } catch (error) {
+      setError(getErrorMessage(error, "The reward could not be redeemed."));
+    } finally {
+      setWorking(false);
     }
   }
 

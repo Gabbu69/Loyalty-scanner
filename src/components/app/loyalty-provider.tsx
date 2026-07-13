@@ -12,6 +12,7 @@ import {
 
 import { demoStore } from "@/lib/data/demo-store";
 import { productionStore } from "@/lib/data/production-store";
+import { getErrorMessage } from "@/lib/errors";
 import { getSupabasePublicConfig } from "@/lib/supabase/env";
 import type {
   AwardOutcome,
@@ -28,6 +29,7 @@ import type {
 type LoyaltyContextValue = {
   mode: "demo" | "production";
   loading: boolean;
+  error: string | null;
   snapshot: LoyaltySnapshot | null;
   summary: DashboardSummary | null;
   refresh: () => Promise<void>;
@@ -53,8 +55,10 @@ export function LoyaltyProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<LoyaltySnapshot | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       if (mode === "production") {
         const next = await productionStore.snapshot();
@@ -64,19 +68,24 @@ export function LoyaltyProvider({ children }: { children: ReactNode }) {
         setSnapshot(demoStore.snapshot());
         setSummary(demoStore.dashboard());
       }
+      setError(null);
+    } catch (cause) {
+      setError(getErrorMessage(cause, "Loyalty data could not be loaded."));
     } finally {
       setLoading(false);
     }
   }, [mode]);
 
   useEffect(() => {
-    void refresh();
+    const handle = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(handle);
   }, [refresh]);
 
   const value = useMemo<LoyaltyContextValue>(
     () => ({
       mode,
       loading,
+      error,
       snapshot,
       summary,
       refresh,
@@ -162,7 +171,7 @@ export function LoyaltyProvider({ children }: { children: ReactNode }) {
         return next;
       },
     }),
-    [loading, mode, refresh, snapshot, summary],
+    [error, loading, mode, refresh, snapshot, summary],
   );
 
   return <LoyaltyContext.Provider value={value}>{children}</LoyaltyContext.Provider>;

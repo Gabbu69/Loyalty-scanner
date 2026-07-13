@@ -87,6 +87,11 @@ function messageForStatus(status: string) {
     invalid: "This loyalty ID is not recognized for this store.",
     revoked: "This card was replaced. Use the newest loyalty card.",
     invalid_request: "The request was incomplete. Try again.",
+    invalid_name: "Enter a valid customer name.",
+    invalid_phone: "Enter a valid phone number or leave it blank.",
+    invalid_query: "The customer search is too long.",
+    invalid_store_name: "Enter a valid store name.",
+    invalid_timezone: "Choose a valid reporting timezone.",
     idempotency_conflict: "This retry key was already used for a different action.",
     reward_unavailable: "This reward is not available right now.",
   }[status] ?? "The request could not be completed.";
@@ -127,7 +132,7 @@ async function loadMembers(
   const { data, error } = await supabase.rpc("search_members", {
     p_store_id: storeId,
     p_query: "",
-    p_limit: 50,
+    p_limit: 1_000,
   });
   if (error) throw error;
   const payload = asRecord(data);
@@ -138,7 +143,7 @@ async function loadMembers(
 
 async function loadSettings(storeId: string): Promise<ProgramSettings> {
   const supabase = await requireClient();
-  const [{ data: store }, { data: program }, { data: reward }] = await Promise.all([
+  const [storeResult, programResult, rewardResult] = await Promise.all([
     supabase.from("stores").select("id,name,timezone").eq("id", storeId).single(),
     supabase
       .from("program_settings")
@@ -152,6 +157,11 @@ async function loadSettings(storeId: string): Promise<ProgramSettings> {
       .limit(1)
       .maybeSingle(),
   ]);
+  const queryError = storeResult.error ?? programResult.error ?? rewardResult.error;
+  if (queryError) throw queryError;
+  const store = storeResult.data;
+  const program = programResult.data;
+  const reward = rewardResult.data;
   const storeRow = asRecord(store);
   const programRow = asRecord(program);
   const rewardRow = asRecord(reward);
@@ -169,12 +179,21 @@ async function loadSettings(storeId: string): Promise<ProgramSettings> {
 }
 
 async function loadStaff(context: StoreContext): Promise<StaffMember[]> {
+  if (context.role === "owner") {
+    const response = await fetch("/api/staff", { cache: "no-store" });
+    if (response.ok) {
+      const payload = (await response.json()) as { staff?: StaffMember[] };
+      if (Array.isArray(payload.staff)) return payload.staff;
+    }
+  }
+
   const supabase = await requireClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("staff_memberships")
     .select("id,user_id,role,is_active,created_at")
     .eq("store_id", context.storeId)
     .order("created_at", { ascending: true });
+  if (error) throw error;
   const rows = Array.isArray(data) ? data : [];
   return rows.map((row) => {
     const value = asRecord(row);
@@ -182,6 +201,7 @@ async function loadStaff(context: StoreContext): Promise<StaffMember[]> {
     const isCurrent = userId === context.userId;
     return {
       id: asString(value.id, userId),
+      isCurrent,
       displayName: isCurrent ? "Signed-in staff" : `Staff ${userId.slice(0, 8)}`,
       email: isCurrent ? "Current account" : userId,
       role: value.role === "staff" ? "staff" : "owner",
@@ -199,7 +219,8 @@ async function loadActivity(storeId: string): Promise<ActivityItem[]> {
     .eq("store_id", storeId)
     .order("created_at", { ascending: false })
     .limit(100);
-  if (error || !Array.isArray(data)) return [];
+  if (error) throw error;
+  if (!Array.isArray(data)) return [];
   return data.map((row) => {
     const value = asRecord(row);
     const member = asRecord(value.members);
@@ -388,7 +409,10 @@ export const productionStore = {
     if (error) throw error;
     const payload = asRecord(data);
     if (payload.status !== "created") throw new Error(messageForStatus(asString(payload.status)));
-    const member = memberOnly(mapMember(payload.member));
+    const timestamp = new Date().toISOString();
+    const member = memberOnly(
+      mapMember({ ...asRecord(payload.member), created_at: timestamp, updated_at: timestamp }),
+    );
     return { member, token: asString(payload.loyalty_id) };
   },
 

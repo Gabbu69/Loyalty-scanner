@@ -106,6 +106,7 @@ function seedState(): DemoState {
     staff: [
       {
         id: "demo-owner",
+        isCurrent: true,
         displayName: STAFF_NAME,
         email: "owner@example.com",
         role: "owner",

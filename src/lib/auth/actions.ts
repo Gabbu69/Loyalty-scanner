@@ -11,6 +11,14 @@ function loginRedirect(error: string, nextPath: string): never {
   redirect(`/login?${params.toString()}`);
 }
 
+function setupRedirect(error: string): never {
+  redirect(`/setup?error=${encodeURIComponent(error)}`);
+}
+
+function passwordRedirect(error: string): never {
+  redirect(`/set-password?error=${encodeURIComponent(error)}`);
+}
+
 export async function signInWithPasswordAction(formData: FormData): Promise<void> {
   const nextPath = safeNextPath(formData.get("next"));
 
@@ -62,7 +70,77 @@ export async function signInWithPasswordAction(formData: FormData): Promise<void
 export async function signOutAction(): Promise<void> {
   const supabase = await createClient();
   if (supabase) {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
   }
   redirect("/");
+}
+
+export async function bootstrapStoreAction(formData: FormData): Promise<void> {
+  if (isDemoMode()) {
+    redirect("/scan");
+  }
+
+  const storeName = String(formData.get("storeName") ?? "").trim();
+  const timezone = String(formData.get("timezone") ?? "Asia/Manila").trim();
+  if (storeName.length < 2 || storeName.length > 120) {
+    setupRedirect("invalid_store_name");
+  }
+
+  const supabase = await createClient();
+  if (!supabase) {
+    setupRedirect("missing_config");
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) {
+    redirect("/login?next=/setup");
+  }
+
+  const { data, error } = await supabase.rpc("bootstrap_store", {
+    p_store_name: storeName,
+    p_timezone: timezone,
+  });
+  if (error) {
+    setupRedirect("bootstrap_failed");
+  }
+
+  const payload = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const status = typeof payload.status === "string" ? payload.status : "bootstrap_failed";
+  if (status === "created" || status === "existing") {
+    redirect("/scan");
+  }
+
+  setupRedirect(status);
+}
+
+export async function updatePasswordAction(formData: FormData): Promise<void> {
+  if (isDemoMode()) {
+    redirect("/scan");
+  }
+
+  const password = String(formData.get("password") ?? "");
+  const confirmation = String(formData.get("passwordConfirmation") ?? "");
+  if (password.length < 8) {
+    passwordRedirect("password_too_short");
+  }
+  if (password !== confirmation) {
+    passwordRedirect("password_mismatch");
+  }
+
+  const supabase = await createClient();
+  if (!supabase) {
+    passwordRedirect("service_unavailable");
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) {
+    redirect("/login?next=/set-password");
+  }
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    passwordRedirect("update_failed");
+  }
+
+  redirect("/scan");
 }
